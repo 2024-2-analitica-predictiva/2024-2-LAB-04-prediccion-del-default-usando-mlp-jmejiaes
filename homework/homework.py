@@ -96,3 +96,153 @@
 # {'type': 'cm_matrix', 'dataset': 'train', 'true_0': {"predicted_0": 15562, "predicte_1": 666}, 'true_1': {"predicted_0": 3333, "predicted_1": 1444}}
 # {'type': 'cm_matrix', 'dataset': 'test', 'true_0': {"predicted_0": 15562, "predicte_1": 650}, 'true_1': {"predicted_0": 2490, "predicted_1": 1420}}
 #
+
+import pandas as pd
+import gzip
+import pickle
+import os
+import json
+from sklearn.pipeline import Pipeline
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import StandardScaler, OneHotEncoder, MinMaxScaler
+from sklearn.decomposition import PCA
+from sklearn.feature_selection import SelectKBest
+from sklearn.neural_network import MLPClassifier
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import precision_score, balanced_accuracy_score, recall_score, f1_score, confusion_matrix
+
+def paso_1():
+    # Cargar datos
+    test_data = pd.read_csv("files/input/test_data.csv.zip", index_col=False, compression="zip")
+    train_data = pd.read_csv("files/input/train_data.csv.zip", index_col=False, compression="zip")
+
+    # Renombrar columna
+    train_data = train_data.rename(columns={"default payment next month": "default"})
+    test_data = test_data.rename(columns={"default payment next month": "default"})
+
+    # Eliminar columna ID
+    train_data = train_data.drop(columns=["ID"])
+    test_data = test_data.drop(columns=["ID"])
+
+    # Eliminar registros con información no disponible
+    train_data = train_data[(train_data["MARRIAGE"] != 0) & (train_data["EDUCATION"] != 0)]
+    test_data = test_data[(test_data["MARRIAGE"] != 0) & (test_data["EDUCATION"] != 0)]
+
+    # Agrupar valores > 4 en EDUCATION como "others"
+    train_data["EDUCATION"] = train_data["EDUCATION"].apply(lambda x: 4 if x > 4 else x)
+    test_data["EDUCATION"] = test_data["EDUCATION"].apply(lambda x: 4 if x > 4 else x)
+
+    return train_data, test_data
+
+def paso_2(train_data, test_data):
+    x_train = train_data.drop(columns="default")
+    y_train = train_data["default"]
+    x_test = test_data.drop(columns="default")
+    y_test = test_data["default"]
+    return x_train, y_train, x_test, y_test
+
+def paso_3(x_train):
+    categorical_features = ["SEX", "EDUCATION", "MARRIAGE"]
+    numerical_features = [col for col in x_train.columns if col not in categorical_features]
+
+    # Crear pipeline
+    pipeline = Pipeline([
+        ("preprocessor", ColumnTransformer([
+            ("num", StandardScaler(), numerical_features),
+            ("cat", OneHotEncoder(), categorical_features)
+        ])),
+        ("pca", PCA()),
+        ("scaler", MinMaxScaler()),
+        ("feature_selection", SelectKBest()),
+        ("classifier", MLPClassifier(max_iter=15000,random_state=2025))
+    ])
+
+    return pipeline
+
+def paso_4(pipeline, x_train, y_train):
+    # Optimizar hiperparametros
+    param_grid = {
+        "pca__n_components": [None],
+        "feature_selection__k": [3,5,9],
+        "classifier__hidden_layer_sizes": [(50, 30, 40, 60)],
+        "classifier__alpha": [0.26],
+        'classifier__learning_rate_init': [0.001],
+    }
+
+    cv = GridSearchCV(pipeline, param_grid, scoring="balanced_accuracy", cv=10)
+    cv.fit(x_train, y_train)
+
+    return cv
+
+def paso_5(cv):
+    # Guardar modelo
+    with gzip.open("files/models/model.pkl.gz", "wb") as f:
+        pickle.dump(cv, f)
+
+def paso_6(model, x_train, x_test, y_train, y_test):
+    y_train_pred = model.predict(x_train)
+    y_test_pred = model.predict(x_test)
+
+    metrics_train = {
+        "type": "metrics",
+        "dataset": "train",
+        "precision": precision_score(y_train, y_train_pred, zero_division=0),
+        "balanced_accuracy": balanced_accuracy_score(y_train, y_train_pred),
+        "recall": recall_score(y_train, y_train_pred, zero_division=0),
+        "f1_score": f1_score(y_train, y_train_pred, zero_division=0),
+    }
+
+    metrics_test = {
+        "type": "metrics",
+        "dataset": "test",
+        "precision": precision_score(y_test, y_test_pred, zero_division=0),
+        "balanced_accuracy": balanced_accuracy_score(y_test, y_test_pred),
+        "recall": recall_score(y_test, y_test_pred, zero_division=0),
+        "f1_score": f1_score(y_test, y_test_pred, zero_division=0),
+    }
+
+    output_dir = "files/output"
+    os.makedirs(output_dir, exist_ok=True)
+    output_path = os.path.join(output_dir, "metrics.json")
+
+    with open(output_path, "w") as f:
+        f.write(json.dumps(metrics_train) + "\n")
+        f.write(json.dumps(metrics_test) + "\n")
+
+
+def paso_7(model, x_train, x_test, y_train, y_test):
+    y_train_pred = model.predict(x_train)
+    y_test_pred = model.predict(x_test)
+
+    cm_train = confusion_matrix(y_train, y_train_pred)
+    cm_test = confusion_matrix(y_test, y_test_pred)
+
+    def format_confusion_matrix(cm, dataset_type):
+        return {
+            "type": "cm_matrix",
+            "dataset": dataset_type,
+            "true_0": {"predicted_0": int(cm[0, 0]), "predicted_1": int(cm[0, 1])},
+            "true_1": {"predicted_0": int(cm[1, 0]), "predicted_1": int(cm[1, 1])},
+        }
+
+    metrics = [
+        format_confusion_matrix(cm_train, "train"),
+        format_confusion_matrix(cm_test, "test"),
+    ]
+
+    output_path = "files/output/metrics.json"
+    with open(output_path, "a") as f:
+        for metric in metrics:
+            f.write(json.dumps(metric) + "\n")
+
+def main():
+    train_data, test_data = paso_1()
+    x_train, y_train, x_test, y_test = paso_2(train_data, test_data)
+    pipeline = paso_3(x_train)
+    model = paso_4(pipeline, x_train, y_train)
+    paso_5(model)
+    paso_6(model, x_train, x_test, y_train, y_test)
+    paso_7(model, x_train, x_test, y_train, y_test)
+
+if __name__ == "__main__":
+    main()
