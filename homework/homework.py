@@ -163,7 +163,7 @@ def paso_4(pipeline, x_train, y_train):
     # Optimizar hiperparametros
     param_grid = {
         'pca__n_components': [None],
-        'feature_selection__k':[20],
+        'feature_selection__k':[20,30],
         "classifier__random_state":[43],
         "classifier__hidden_layer_sizes": [(51, 31, 41)],
         'classifier__alpha': [0.26],
