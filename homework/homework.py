@@ -154,7 +154,7 @@ def paso_3(x_train):
         ("pca", PCA()),
         ("scaler", MinMaxScaler()),
         ("feature_selection", SelectKBest()),
-        ("classifier", MLPClassifier(max_iter=15000,random_state=42))
+        ("classifier", MLPClassifier())
     ])
 
     return pipeline
@@ -162,11 +162,12 @@ def paso_3(x_train):
 def paso_4(pipeline, x_train, y_train):
     # Optimizar hiperparametros
     param_grid = {
-        "pca__n_components": [None],
-        "feature_selection__k": [3,5,9],
-        "classifier__hidden_layer_sizes": [(50, 30, 40, 60)],
-        "classifier__alpha": [0.26],
-        'classifier__learning_rate_init': [0.001],
+        'pca__n_components': [None],
+        'feature_selection__k':[20],
+        "classifier__random_state":[43],
+        "classifier__hidden_layer_sizes": [(51, 31, 41)],
+        'classifier__alpha': [0.26],
+        "classifier__learning_rate_init": [0.001],
     }
 
     cv = GridSearchCV(pipeline, param_grid, scoring="balanced_accuracy", cv=10)
