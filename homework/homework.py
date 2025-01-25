@@ -154,7 +154,7 @@ def paso_3(x_train):
         ("pca", PCA()),
         ("scaler", MinMaxScaler()),
         ("feature_selection", SelectKBest()),
-        ("classifier", MLPClassifier(max_iter=15000,random_state=2025))
+        ("classifier", MLPClassifier(max_iter=15000,random_state=42))
     ])
 
     return pipeline
